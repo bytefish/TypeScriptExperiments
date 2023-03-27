@@ -1,4 +1,4 @@
-# EntityFramework Core Experiments #
+# TypeScript Experiments #
 
 This repository contains various experiments with TypeScript.
 
