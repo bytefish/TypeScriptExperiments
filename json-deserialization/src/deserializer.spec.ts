@@ -2,7 +2,7 @@ import { describe, it, } from 'mocha';
 import { Temporal } from "@js-temporal/polyfill";
 import { deepStrictEqual } from "assert";
 
-import { deserialize, JsonConverter, JsonProperty, JsonType, transform, transformArray } from './deserializer';
+import { deserialize, isObject, JsonConverter, JsonProperty, JsonType, transform, transformArray } from './deserializer';
 
 const fixtureChildOrder1 = `
     { 
@@ -87,6 +87,7 @@ export class Order {
     @JsonProperty("pickupDateTime")
     @JsonType(Date)
     pickupDateTime?: Date;
+    
 }
 
 export class Customer {
@@ -169,6 +170,38 @@ export class ODataResponseBuilder {
    }
 }
 
+export class Converters {
+
+    public static convertToCustomerArray(data: any): Customer[] | null {
+        return Array.isArray(data) ? data.map(item => Converters.convertToCustomer(item)): undefined;
+    }
+
+    public static convertToCustomer(data: any): Customer | undefined {
+        return data ? {
+            customerId: data["customerId"],
+            customerName: data["customerName"],
+            orders: Converters.convertToOrderArray(data["orders"])
+        } : undefined;
+    }
+
+    public static convertToOrderArray(data: any): Order[] | undefined {
+        return Array.isArray(data) ? data.map(item => Converters.convertToOrder(item)) : undefined;
+    }
+
+    public static convertToOrder(data: any): Order | null {
+        return data ? {
+            orderId: data["orderId"],
+            orderNumber: data["orderNumber"],
+            pickupDateTime: data["pickupDateTime"] 
+                ? new Date(data["pickupDateTime"]) : undefined
+        } : undefined;
+    }
+
+    public static convertDateArray(data: any) : Date[] | undefined {
+        return Array.isArray(data) ? data.map(item => new Date(item)) : undefined;
+    }
+}
+
 describe('JSON.parse', () => {
 
     it('Should not parse string as Date', () => {
@@ -218,11 +251,31 @@ describe('deserialize', () => {
         deepStrictEqual(isInstanceOfDate, true);
     }); 
 
+
+    it('Should convert Customer with manual conversion', () => {
+        // prepare
+        const data = JSON.parse(fixtureCustomer);
+
+        // act
+        const verifyResult: Customer = Converters.convertToCustomer(data);
+        
+        // verify
+        const isTypeOfObject = typeof verifyResult.orders[0].pickupDateTime === "object";
+        const isInstanceOfDate = verifyResult.orders[0].pickupDateTime instanceof Date;
+        
+        deepStrictEqual(isTypeOfObject, true);
+        deepStrictEqual(isInstanceOfDate, true);
+
+        deepStrictEqual(verifyResult.orders[0].pickupDateTime, new Date("2018-07-15T05:35:03.000Z"));
+        deepStrictEqual(verifyResult.orders[1].pickupDateTime, new Date("2019-01-12T01:15:03.000Z"));
+    }); 
+
     it('Should Convert Child Array and Dates', () => {
         // prepare
-        //act
+        // act
         const customer: Customer = deserialize(fixtureCustomer, Customer);
         
+        // verify
         deepStrictEqual(customer.orders[0].pickupDateTime, new Date("2018-07-15T05:35:03.000Z"));
         deepStrictEqual(customer.orders[1].pickupDateTime, new Date("2019-01-12T01:15:03.000Z"));
     }); 
@@ -273,6 +326,7 @@ describe('deserialize', () => {
     
     it('Should Convert OData Entities Response', () => {
 
+        // prepare
         const expectedODataResponse: ODataEntitiesResponse<Order> = {
             metadata: new Map<string, any>([
                 ["context", "http://localhost:5000/odata/#Customer"],
@@ -292,8 +346,10 @@ describe('deserialize', () => {
               ]
         };
 
+        // act
         const verifyResult = ODataResponseBuilder.parseEntitiesResponse<Order>(fixtureODataEntitiesResponse, Order);
 
+        // verify
         deepStrictEqual(verifyResult.metadata[0], expectedODataResponse.metadata[0]);
         deepStrictEqual(verifyResult.metadata[1], expectedODataResponse.metadata[1]);
 
